@@ -1,19 +1,32 @@
 import argparse
 import asyncio
+import getpass
 import json
+import os
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
-from .client import AskHuman, AskHumanError, HumanCancelled, HumanTimeout
+from .client import AskHuman, AskHumanError, HumanCancelled, HumanTimeout, selected_mode
+from .config import Channel, RoutingConfig
+from .embedded import config_path
 from .models import AnswerInput
 from .settings import Settings, data_directory
+from .store import Conflict, Store
 
 
 def main():
     parser = argparse.ArgumentParser(prog="askhuman", description="Give your agent a human.")
+    parser.add_argument("--mode", choices=["embedded", "remote"], help="Default: embedded")
     commands = parser.add_subparsers(dest="command", required=True)
-    init = commands.add_parser("init", help="Create local credentials and storage")
+    configure = commands.add_parser("configure", help="Configure direct embedded channels")
+    configure.add_argument("--channel", choices=["terminal", "telegram", "slack"])
+    configure.add_argument(
+        "--from-file", type=Path, help="Import and replace the full configuration"
+    )
+    configure.add_argument("--output", type=Path, default=config_path(data_directory()))
+    init = commands.add_parser("init", help="Initialize the optional web server")
     init.add_argument("--data-dir", type=Path, default=data_directory())
     init.add_argument("--base-url", default="http://127.0.0.1:8765")
     serve = commands.add_parser("serve", help="Run the API, human inbox, and delivery worker")
@@ -28,7 +41,12 @@ def main():
     ask.add_argument("--option", action="append", default=[])
     ask.add_argument("--recipient")
     ask.add_argument("--timeout", type=int, default=86400)
-    ask.add_argument("--wait", type=float, default=0)
+    ask.add_argument(
+        "--wait",
+        type=float,
+        default=None,
+        help="Wait budget in seconds; 0 creates only, default waits for the answer",
+    )
     ask.add_argument("--idempotency-key")
     get = commands.add_parser("get", help="Get a saved request")
     get.add_argument("request_id")
@@ -55,7 +73,9 @@ def main():
     commands.add_parser("mcp", help="Run the MCP stdio server")
     args = parser.parse_args()
     try:
-        if args.command == "init":
+        if args.command == "configure":
+            configure_embedded(args)
+        elif args.command == "init":
             settings = Settings.initialize(args.data_dir, args.base_url)
             print(
                 f"AskHuman initialized in {settings.data_dir.resolve()}\n"
@@ -81,6 +101,19 @@ def main():
 
             mcp_main()
         elif args.command in ("inbox", "answer"):
+            if selected_mode(args.mode) == "embedded":
+                store = Store(
+                    data_directory() / "embedded.sqlite3", default_config=RoutingConfig.embedded()
+                )
+                if args.command == "inbox":
+                    print(json.dumps([r.model_dump(mode="json") for r in store.list()], indent=2))
+                else:
+                    print(
+                        store.answer(
+                            args.request_id, answer_body(args), "terminal"
+                        ).model_dump_json(indent=2)
+                    )
+                return
             # This command deliberately requires local operator credentials, not the agent key.
             import httpx
 
@@ -94,12 +127,7 @@ def main():
                 if args.command == "inbox":
                     result = client.get("/api/admin/requests")
                 else:
-                    body = AnswerInput(
-                        answer=args.text,
-                        selected_option=args.option,
-                        respondent=args.name,
-                        approved=True if args.approve else False if args.reject else None,
-                    )
+                    body = answer_body(args)
                     result = client.post(
                         f"/api/admin/requests/{args.request_id}/answer", json=body.model_dump()
                     )
@@ -107,13 +135,13 @@ def main():
                 print(json.dumps(result.json(), indent=2))
         else:
             asyncio.run(agent_command(args))
-    except (ValueError, OSError, AskHumanError) as exc:
+    except (ValueError, OSError, AskHumanError, Conflict, KeyError) as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(1) from exc
 
 
 async def agent_command(args):
-    async with AskHuman() as human:
+    async with AskHuman(mode=args.mode) as human:
         if args.command == "ask":
             result = await human.create(
                 args.question,
@@ -124,7 +152,7 @@ async def agent_command(args):
                 timeout_seconds=args.timeout,
                 idempotency_key=args.idempotency_key,
             )
-            if args.wait and result.status == "pending":
+            if args.wait != 0 and result.status == "pending":
                 try:
                     await human.wait(result.id, wait_timeout=args.wait)
                 except (HumanTimeout, HumanCancelled):
@@ -141,6 +169,64 @@ async def agent_command(args):
         else:
             result = await human.get(args.request_id)
         print(result.model_dump_json(indent=2))
+
+
+def answer_body(args):
+    return AnswerInput(
+        answer=args.text,
+        selected_option=args.option,
+        respondent=args.name,
+        approved=True if args.approve else False if args.reject else None,
+    )
+
+
+def configure_embedded(args):
+    path = args.output.expanduser()
+    if args.from_file:
+        config = RoutingConfig.model_validate_json(args.from_file.read_text()).require_embedded()
+    else:
+        if path.exists():
+            raise FileExistsError(
+                f"Configuration exists at {path}. Edit it or import with --from-file."
+            )
+        choice = args.channel
+        if choice is None:
+            if not sys.stdin.isatty():
+                raise ValueError("Choose --channel terminal, telegram, or slack")
+            choice = input("Channel [terminal/telegram/slack] (terminal): ").strip() or "terminal"
+        kind = {
+            "terminal": "terminal",
+            "telegram": "telegram_polling",
+            "slack": "slack_socket",
+        }.get(choice)
+        if kind is None:
+            raise ValueError("Choose terminal, telegram, or slack")
+        values = {}
+        if choice != "terminal":
+            if not sys.stdin.isatty():
+                raise ValueError(
+                    "Use an interactive terminal or --from-file for channel credentials"
+                )
+            print("Use env:VARIABLE_NAME to reference credentials from your environment.")
+            values["bot_token"] = getpass.getpass("Bot token (or env reference): ").strip()
+            if choice == "slack":
+                values["app_token"] = getpass.getpass("App token with connections:write: ").strip()
+                values["channel_id"] = input("Slack channel or DM ID: ").strip()
+            else:
+                values["chat_id"] = input("Telegram chat ID: ").strip()
+            values["allowed_user_ids"] = input("Allowed human user IDs, comma-separated: ").strip()
+        config = RoutingConfig(
+            channels=[Channel(id=choice, type=kind, settings=values)], default_channels=[choice]
+        ).require_embedded()
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as file:
+        file.write(config.model_dump_json(indent=2))
+        temporary = Path(file.name)
+    try:
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    print(f"Saved {path.resolve()}. New AskHuman instances will use these channels.")
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .channels import reply_token, worker
-from .config import FIELDS, RoutingConfig
+from .config import EMBEDDED_TYPES, FIELDS, RoutingConfig
 from .models import AnswerInput, Question, Request, Status
 from .settings import Settings
 from .store import Conflict, Store
@@ -34,7 +34,7 @@ def create_app(settings: Settings | None = None, *, run_worker: bool = True) -> 
 
     app = FastAPI(
         title="AskHuman",
-        version="0.1.0",
+        version="0.2.0",
         lifespan=lifespan,
         description="A universal human-input API for agents.",
     )
@@ -85,7 +85,7 @@ def create_app(settings: Settings | None = None, *, run_worker: bool = True) -> 
 
     @app.get("/health")
     def health():
-        return {"status": "ok", "version": "0.1.0"}
+        return {"status": "ok", "version": "0.2.0"}
 
     @app.get("/", include_in_schema=False)
     def index():
@@ -149,12 +149,13 @@ def create_app(settings: Settings | None = None, *, run_worker: bool = True) -> 
 
     @app.put("/api/admin/config", dependencies=[Depends(admin)])
     def put_config(config: RoutingConfig):
+        config.require_server()
         store.configure(config)
         return {"saved": True}
 
     @app.get("/api/admin/channel-types", dependencies=[Depends(admin)])
     def channel_types():
-        return FIELDS
+        return {name: fields for name, fields in FIELDS.items() if name not in EMBEDDED_TYPES}
 
     @app.get("/api/replies/{request_id}", response_model=Request, dependencies=[Depends(human)])
     def get_reply(request_id: str):

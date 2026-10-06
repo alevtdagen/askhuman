@@ -1,4 +1,4 @@
-"""MCP stdio server. Output is reserved for the protocol; human delivery is out of process."""
+"""MCP wrapper for the embedded engine or an explicitly configured remote service."""
 
 from contextlib import asynccontextmanager
 from typing import Literal
@@ -13,7 +13,8 @@ from .tools import DESCRIPTION, ToolInput, submit_tool
 def create_mcp():
     @asynccontextmanager
     async def lifespan(server):
-        async with AskHuman() as client:
+        # stdin/stdout belong to MCP. Humans use messaging channels or the separate operator CLI.
+        async with AskHuman(interactive=False) as client:
             yield client
 
     server = FastMCP(

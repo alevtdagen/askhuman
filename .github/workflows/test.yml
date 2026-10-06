@@ -1,6 +1,32 @@
 name: Test and build
 on: [push, pull_request]
 jobs:
+  embedded-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install .
+      - name: Run without server dependencies or network access
+        run: |
+          python - <<'PY'
+          import asyncio, socket, sys, tempfile
+          from askhuman import AskHuman
+          def forbidden(*args, **kwargs):
+              raise AssertionError("Embedded terminal mode opened a network connection")
+          socket.socket.connect = forbidden
+          socket.socket.bind = forbidden
+          async def check():
+              with tempfile.TemporaryDirectory() as directory:
+                  async with AskHuman(data_dir=directory, interactive=False) as human:
+                      request = await human.create("Core installation check")
+                      assert request.status == "pending"
+                      assert (await human.cancel(request.id)).status == "cancelled"
+              assert not {"fastapi", "uvicorn", "mcp", "slack_sdk", "aiohttp"} & set(sys.modules)
+          asyncio.run(check())
+          PY
   python:
     runs-on: ubuntu-latest
     strategy:
@@ -11,7 +37,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - run: pip install -e '.[server,mcp,dev,openai,langchain]'
+      - run: pip install -e '.[server,mcp,dev,openai,langchain,slack]'
       - run: ruff check src tests examples
       - run: ruff format --check src tests examples
       - run: pytest

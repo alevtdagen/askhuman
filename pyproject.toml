@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "askhuman-agent"
-version = "0.1.0"
+version = "0.2.0"
 description = "Give any agent a human when it gets stuck."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,6 +22,7 @@ mcp = ["mcp>=1.12,<2"]
 dev = ["pytest>=8,<10", "pytest-asyncio>=0.24,<2", "ruff>=0.9,<1", "build>=1.2"]
 langchain = ["langchain-core>=0.3,<2"]
 openai = ["openai-agents>=0.2,<1"]
+slack = ["slack-sdk>=3.33,<4", "aiohttp>=3.10,<4"]
 
 [project.scripts]
 askhuman = "askhuman.cli:main"

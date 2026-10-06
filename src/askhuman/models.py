@@ -57,7 +57,7 @@ class AnswerInput(BaseModel):
 class Answer(AnswerInput):
     request_id: str
     timestamp: datetime
-    source: Literal["admin", "reply_link"]
+    source: Literal["admin", "reply_link", "terminal", "telegram", "slack"]
 
 
 class Delivery(BaseModel):

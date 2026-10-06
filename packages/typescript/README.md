@@ -1,7 +1,8 @@
 # AskHuman for TypeScript
 
 Give any agent a human when it gets stuck. This zero-dependency client connects to the
-AskHuman server in the repository root. Requires Node 20+ (or a modern server JS runtime).
+optional AskHuman server in the repository root. Python 0.2 defaults to embedded operation;
+this TypeScript client continues to use HTTP. Requires Node 20+ (or a modern server JS runtime).
 Keep the agent API key on your backend.
 
 Build locally with `npm install && npm run build`, then install this directory into your

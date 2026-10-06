@@ -1,4 +1,4 @@
-"""Run with `python examples/python_agent.py` after starting the service."""
+"""Run `python examples/python_agent.py`; answer in the terminal. No server required."""
 
 import asyncio
 

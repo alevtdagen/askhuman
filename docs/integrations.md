@@ -1,8 +1,9 @@
 # Integrate once; let the human choose delivery
 
-The stable boundary is HTTP plus typed request/answer JSON. No framework is required by
-the core client. The human service runs separately from the agent process; long human
-waits can outlive an agent worker, an MCP call, or a model turn.
+The shared boundary is a typed question and answer. No framework is required by the
+Python library. `AskHuman()` runs locally, with terminal or direct messaging replies.
+Explicit remote configuration selects the optional HTTP service. Both modes persist
+requests so their IDs can survive an agent worker, MCP call, or model turn.
 
 ## Any Python framework
 
@@ -20,8 +21,9 @@ async def ask_for_direction(question: str, context: str = "") -> dict:
 ```
 
 For durable workers, register a tool around `human.create()` and save the returned ID.
-Resume with `human.get()` / `human.wait()` instead of keeping a worker alive for hours.
-HTTP routes are `POST /v1/requests`, `GET /v1/requests/{id}`,
+Resume with `human.get()` / `human.wait()`. Embedded receiving stops when its process
+stops; keep a runtime alive for live messaging replies, or use the optional service for
+independent agents. HTTP routes in remote mode are `POST /v1/requests`, `GET /v1/requests/{id}`,
 `GET /v1/requests/{id}/wait?seconds=25`, and `POST /v1/requests/{id}/cancel`.
 
 ## OpenAI Responses, Anthropic, and Gemini
@@ -96,17 +98,24 @@ interrupting nodes may execute again. Do not create a fresh question every time 
 
 ## CrewAI, AutoGen, PydanticAI, and other frameworks
 
-Use their MCP bridge where supported, or register the async Python/TypeScript client
-function as a tool. No monkey-patching of frameworks is required. The MCP and HTTP
+Use their MCP bridge where supported, or register an async Python function as a tool.
+The TypeScript client uses the optional HTTP service. No monkey-patching is required. MCP and HTTP
 surfaces provide compatibility without importing every agent framework into this package.
 Native adapters are implemented and tested only for OpenAI Agents and LangChain;
 other framework names describe supported integration approaches, not tested version ranges.
 
 ## MCP and skills
 
-Run `askhuman-mcp` in a client that supports stdio MCP servers. Supply the URL and agent
-key in the host's environment settings; never provide the operator key. The REST service
-must already be running. MCP discovery returns JSON schemas for all four tools.
+Run `askhuman-mcp` in a client that supports stdio MCP servers. By default it owns an
+embedded runtime. Set an absolute `ASKHUMAN_DATA_DIR`, configure its messaging channels,
+and optionally set `ASKHUMAN_MODE=embedded` to make mode selection explicit. It never
+reads stdin for human answers: stdin belongs to MCP. With the default terminal channel,
+the human answers from another terminal using `askhuman --mode embedded inbox` and
+`askhuman --mode embedded answer REQUEST_ID ...` against that same directory.
+
+For remote mode, supply `ASKHUMAN_BASE_URL` and `ASKHUMAN_API_KEY` in the host's environment
+and run the REST service separately. Never provide the operator key to an agent. MCP
+discovery returns JSON schemas for all four tools in either mode.
 
 Install the skill with `askhuman install-skill PATH_TO_SKILLS_PARENT`. Common paths
 include a repository's `.agents/skills` or a host-specific user skills directory. The
@@ -119,6 +128,10 @@ terminal result: `answered`, `expired`, `cancelled`, or notification-only `notif
 `answered` carries `response`. Inspect `selected_option` for choices and
 `response.approved is True` for approvals. Never use truthiness of the answer object as
 authorization. Include exact targets and action details in the question context.
+
+The same framework tools work in either mode; they receive the chosen `AskHuman` instance.
+Embedded mode shares the application's trust boundary and channel credentials. Use the
+remote service for a separate operator/agent credential boundary. See [embedded setup](embedded.md).
 
 This package handles human interaction; your workflow schedules and resumes the agent.
 It does not automatically detect uncertainty, restart a model session, or execute the

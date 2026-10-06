@@ -19,7 +19,7 @@ class Conflict(Exception):
 
 
 class Store:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, default_config: RoutingConfig | None = None):
         self.path = path
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
@@ -45,9 +45,17 @@ class Store:
                 );
                 CREATE INDEX IF NOT EXISTS request_status ON requests(status, created);
                 CREATE INDEX IF NOT EXISTS delivery_due ON deliveries(status, due);
+                CREATE TABLE IF NOT EXISTS message_bindings (
+                    channel TEXT NOT NULL, external_id TEXT NOT NULL, request_id TEXT NOT NULL,
+                    PRIMARY KEY(channel, external_id)
+                );
+                CREATE TABLE IF NOT EXISTS receiver_cursors (
+                    channel TEXT PRIMARY KEY, value TEXT NOT NULL
+                );
             """)
             db.execute(
-                "INSERT OR IGNORE INTO config VALUES(1, ?)", (RoutingConfig().model_dump_json(),)
+                "INSERT OR IGNORE INTO config VALUES(1, ?)",
+                ((default_config or RoutingConfig()).model_dump_json(),),
             )
 
     @contextmanager
@@ -238,7 +246,7 @@ class Store:
             self.event(db, request_id, "cancelled", "agent")
             return request
 
-    def claim_delivery(self):
+    def claim_delivery(self, request_id: str | None = None):
         with self.connection() as db:
             db.execute("BEGIN IMMEDIATE")
             self.expire(db)
@@ -250,8 +258,8 @@ class Store:
             )
             row = db.execute(
                 "SELECT * FROM deliveries WHERE status IN ('pending','sending') "
-                "AND due<=? ORDER BY id LIMIT 1",
-                (time.time(),),
+                "AND due<=? AND (? IS NULL OR request_id=?) ORDER BY id LIMIT 1",
+                (time.time(), request_id, request_id),
             ).fetchone()
             if not row:
                 return None
@@ -268,9 +276,11 @@ class Store:
             )
             return dict(row) | {"attempts": row["attempts"] + 1}
 
-    def finish_delivery(self, delivery: dict, error: str | None):
+    def finish_delivery(self, delivery: dict, error: str | None, *, permanent: bool = False):
         status = (
-            "delivered" if not error else ("failed" if delivery["attempts"] >= 5 else "pending")
+            "delivered"
+            if not error
+            else ("failed" if permanent or delivery["attempts"] >= 5 else "pending")
         )
         with self.connection() as db:
             db.execute(
@@ -284,6 +294,44 @@ class Store:
                 ),
             )
             self.event(db, delivery["request_id"], "delivery_" + status, delivery["channel"])
+
+    def bind_message(self, channel: str, external_id: str, request_id: str):
+        with self.connection() as db:
+            db.execute(
+                "INSERT OR IGNORE INTO message_bindings VALUES(?,?,?)",
+                (channel, external_id, request_id),
+            )
+
+    def bound_request(self, channel: str, external_id: str) -> Request | None:
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT request_id FROM message_bindings WHERE channel=? AND external_id=?",
+                (channel, external_id),
+            ).fetchone()
+        return self.get(row[0]) if row else None
+
+    def cursor(self, channel: str) -> str | None:
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT value FROM receiver_cursors WHERE channel=?", (channel,)
+            ).fetchone()
+            return row[0] if row else None
+
+    def set_cursor(self, channel: str, value: str):
+        with self.connection() as db:
+            db.execute(
+                "INSERT INTO receiver_cursors VALUES(?,?) ON CONFLICT(channel) "
+                "DO UPDATE SET value=excluded.value",
+                (channel, value),
+            )
+
+    def receiver_error(self, channel: str, error: str | None):
+        with self.connection() as db:
+            db.execute(
+                "UPDATE deliveries SET error=? WHERE channel=? AND status='delivered' "
+                "AND request_id IN (SELECT id FROM requests WHERE status='pending')",
+                (error, channel),
+            )
 
     def events(self, request_id: str):
         self.get(request_id)

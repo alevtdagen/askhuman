@@ -1,4 +1,8 @@
-# Human-owned channel setup
+# Optional server: human-owned channel setup
+
+This page covers the separately running web service and its browser reply links. For
+the default Python library with terminal, Telegram polling, or Slack Socket Mode, see
+[embedded setup](embedded.md). Direct replies require no HTTP service.
 
 Log into the web inbox with the operator key and open **Channels & routing**. Add a
 channel ID, enter its connection settings, enable it, assign it to a default or recipient
@@ -24,6 +28,10 @@ askhuman answer REQUEST_ID --option 'Finance' --name 'Sam'
 askhuman answer REQUEST_ID --approve --name 'Sam'
 askhuman answer REQUEST_ID --reject --text 'Wait for the test results' --name 'Sam'
 ```
+
+These examples assume `ASKHUMAN_MODE=remote`. Alternatively, add `--mode remote` before
+the command, as in `askhuman --mode remote inbox`. Without remote configuration, CLI
+commands use the embedded database.
 
 These commands load local operator credentials; do not expose the storage directory to
 agent containers. Remote humans should use the inbox or the scoped notification link.

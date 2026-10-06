@@ -24,7 +24,7 @@ export interface Answer {
   approved: boolean | null;
   respondent: string;
   timestamp: string;
-  source: "admin" | "reply_link";
+  source: "admin" | "reply_link" | "terminal" | "telegram" | "slack";
 }
 export interface HumanRequest {
   id: string;

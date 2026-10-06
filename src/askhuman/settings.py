@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 def data_directory() -> Path:
-    return Path(os.environ.get("ASKHUMAN_DATA_DIR", ".askhuman"))
+    return Path(os.environ.get("ASKHUMAN_DATA_DIR", ".askhuman")).expanduser()
 
 
 class Settings(BaseModel):

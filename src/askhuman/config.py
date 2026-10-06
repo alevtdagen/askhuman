@@ -16,6 +16,9 @@ ChannelType = Literal[
     "sms",
     "whatsapp",
     "webhook",
+    "terminal",
+    "telegram_polling",
+    "slack_socket",
 ]
 FIELDS = {
     "web": [],
@@ -27,7 +30,11 @@ FIELDS = {
     "sms": ["account_sid", "auth_token", "from", "to"],
     "whatsapp": ["account_sid", "auth_token", "from", "to"],
     "webhook": ["url", "secret"],
+    "terminal": [],
+    "telegram_polling": ["bot_token", "chat_id", "allowed_user_ids"],
+    "slack_socket": ["bot_token", "app_token", "channel_id", "allowed_user_ids"],
 }
+EMBEDDED_TYPES = {"terminal", "telegram_polling", "slack_socket"}
 OPTIONAL = {"port", "username", "password", "security"}
 
 
@@ -51,6 +58,14 @@ class Channel(BaseModel):
         for key, value in self.settings.items():
             if len(value) > 4096 or "\n" in value or "\r" in value:
                 raise ValueError(f"Invalid value for {key}")
+        if self.type in ("telegram_polling", "slack_socket"):
+            import re
+
+            users = self.settings["allowed_user_ids"]
+            if not users.startswith("env:"):
+                pattern = r"[0-9]+" if self.type == "telegram_polling" else r"[UW][A-Z0-9]+"
+                if not all(re.fullmatch(pattern, user.strip()) for user in users.split(",")):
+                    raise ValueError("allowed_user_ids must contain comma-separated human user IDs")
         url = self.settings.get("url", "")
         if url and not url.startswith("env:"):
             validate_destination(url)
@@ -92,6 +107,28 @@ class RoutingConfig(BaseModel):
     )
     default_channels: list[str] = Field(default_factory=lambda: ["inbox"], min_length=1)
     routes: dict[str, list[str]] = Field(default_factory=dict, max_length=100)
+
+    @classmethod
+    def embedded(cls):
+        return cls(
+            channels=[Channel(id="terminal", type="terminal")], default_channels=["terminal"]
+        )
+
+    def require_embedded(self):
+        unsupported = {c.type for c in self.channels if c.enabled} - EMBEDDED_TYPES
+        if unsupported:
+            raise ValueError(
+                f"Embedded mode cannot receive replies through: {', '.join(sorted(unsupported))}. "
+                "Use terminal, telegram_polling, or slack_socket; use remote mode for web links."
+            )
+        return self
+
+    def require_server(self):
+        if any(c.type in EMBEDDED_TYPES for c in self.channels):
+            raise ValueError(
+                "Direct response channels use embedded mode; server channels use web links"
+            )
+        return self
 
     @model_validator(mode="after")
     def valid_routes(self):
