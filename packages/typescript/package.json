@@ -1,0 +1,24 @@
+{
+  "name": "askhuman-agent",
+  "version": "0.1.0",
+  "description": "Give any agent a human when it gets stuck.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist", "README.md", "LICENSE", "NOTICE"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.json && node --test tests/*.test.mjs",
+    "prepack": "tsc -p tsconfig.json"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alevtdagen/askhuman.git",
+    "directory": "packages/typescript"
+  },
+  "bugs": { "url": "https://github.com/alevtdagen/askhuman/issues" },
+  "devDependencies": { "typescript": "^5.9.3", "@types/node": "^22.0.0" }
+}

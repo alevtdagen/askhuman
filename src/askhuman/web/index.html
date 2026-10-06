@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#123e35" />
+    <title>AskHuman · Your human inbox</title>
+    <link rel="stylesheet" href="/assets/style.css" />
+    <script type="module" src="/assets/app.js"></script>
+  </head>
+  <body>
+    <div id="login" class="login-layout">
+      <div class="login-story">
+        <a class="brand" href="/">ask<span>human</span><i>↗</i></a>
+        <div>
+          <span class="eyebrow">HUMAN JUDGMENT. ON CALL.</span>
+          <h1>Let your agents run.<br />Step in when it matters.</h1>
+          <p>One place for the questions, decisions, and approvals that need you.</p>
+        </div>
+        <small>Your humans. Your channels. Your decisions.</small>
+      </div>
+      <form id="login-form" class="login-form">
+        <span class="small-mark">ah↗</span>
+        <h2>Welcome to your inbox</h2>
+        <p>Use your operator key to manage requests and choose how your agents reach you.</p>
+        <label for="operator-key">Operator key</label>
+        <input
+          id="operator-key"
+          type="password"
+          autocomplete="current-password"
+          required
+          placeholder="Paste your operator key"
+        />
+        <button class="primary" type="submit">Open your inbox <span>→</span></button>
+        <p class="hint">Find your key with <code>askhuman token --admin</code></p>
+        <p id="login-error" class="error" role="alert"></p>
+      </form>
+    </div>
+    <div id="app" class="app-layout" hidden>
+      <aside class="sidebar">
+        <a class="brand" href="/">ask<span>human</span><i>↗</i></a>
+        <span class="nav-label">YOUR WORKSPACE</span>
+        <nav>
+          <button id="nav-inbox" class="nav-item active">
+            ◫ <span>Inbox</span><b id="nav-count">0</b>
+          </button>
+          <button id="nav-channels" class="nav-item">⌘ <span>Channels & routing</span></button>
+        </nav>
+        <div class="sidebar-note">
+          <span class="live-dot"></span> Human input, connected
+          <p>Agents ask. You choose how to answer.</p>
+        </div>
+        <button id="logout" class="quiet">Sign out ↗</button>
+      </aside>
+      <main>
+        <header class="topbar">
+          <span id="breadcrumb">Workspace / Inbox</span
+          ><span class="workspace-pill"><span class="live-dot"></span> Self-hosted workspace</span>
+        </header>
+        <div id="feedback" role="status" aria-live="polite" hidden></div>
+        <section id="inbox-view">
+          <div class="page-heading">
+            <div>
+              <span class="eyebrow">A LITTLE HUMAN DIRECTION</span>
+              <h1>Your judgment.<br />Their next step.</h1>
+              <p>Help your agents move forward, one answer at a time.</p>
+            </div>
+            <button id="refresh" class="secondary">↻ Refresh</button>
+          </div>
+          <div class="stats">
+            <div>
+              <span>Needs your input</span><strong id="pending-count">0</strong
+              ><small>Ready for your decision</small>
+            </div>
+            <div>
+              <span>Answered</span><strong id="answered-count">0</strong
+              ><small>Agents can move forward</small>
+            </div>
+            <div>
+              <span>Connected channels</span><strong id="channel-count">1</strong
+              ><small>Reach you on your terms</small>
+            </div>
+          </div>
+          <div class="section-bar">
+            <h2>Your requests</h2>
+            <div class="filters" role="group" aria-label="Filter requests">
+              <button data-filter="pending" class="selected">Needs input</button
+              ><button data-filter="answered">Answered</button
+              ><button data-filter="all">All activity</button>
+            </div>
+          </div>
+          <div id="requests"></div>
+          <button id="load-more" class="secondary" hidden>Load more requests</button>
+          <p class="hint footer-hint" id="count-note">
+            Requests stay saved while your agents wait.
+          </p>
+        </section>
+        <section id="channels-view" hidden>
+          <div class="page-heading">
+            <div>
+              <span class="eyebrow">MAKE IT WORK FOR YOU</span>
+              <h1>Your humans.<br />Your channels.</h1>
+              <p>Choose where questions land. Your agents use one simple API.</p>
+            </div>
+            <button id="save-config" class="primary">Save changes</button>
+          </div>
+          <div class="section-bar">
+            <h2>Connected channels</h2>
+            <span class="hint">Answers open in a shared response form.</span>
+          </div>
+          <div id="channels" class="channel-grid"></div>
+          <form id="add-channel" class="add-channel">
+            <label
+              >Channel type<select id="channel-type">
+                <option value="slack">Slack</option>
+                <option value="teams">Microsoft Teams</option>
+                <option value="email">Email</option>
+                <option value="discord">Discord</option>
+                <option value="telegram">Telegram</option>
+                <option value="sms">SMS · Twilio</option>
+                <option value="whatsapp">WhatsApp · Twilio</option>
+                <option value="webhook">Custom webhook</option>
+                <option value="web">Web inbox</option>
+              </select></label
+            ><label
+              >Channel ID<input
+                id="channel-id"
+                placeholder="e.g. engineering-slack"
+                required
+                pattern="[a-zA-Z0-9_-]{1,64}" /></label
+            ><button type="submit" class="secondary">+ Add channel</button>
+          </form>
+          <div class="routing-panel">
+            <span class="eyebrow">SEND IT TO THE RIGHT PERSON</span>
+            <h2>Default delivery</h2>
+            <p>
+              Used when an agent doesn’t specify a recipient. Every request is also visible in this
+              inbox.
+            </p>
+            <div id="defaults" class="checks"></div>
+            <h2>Recipient routes</h2>
+            <p>
+              Give your agents a recipient like <code>data-owner</code>. You choose the channels
+              behind it.
+            </p>
+            <div id="routes"></div>
+            <form id="add-route" class="route-add">
+              <input
+                id="route-name"
+                aria-label="Recipient name"
+                placeholder="e.g. data-owner"
+                maxlength="120"
+                required
+              /><button class="secondary" type="submit">+ Add recipient</button>
+            </form>
+          </div>
+          <p class="hint">
+            A reachable HTTPS service address is needed for people answering outside this computer.
+            Secrets are stored locally; use <code>env:VARIABLE_NAME</code> to reference server
+            environment variables.
+          </p>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
